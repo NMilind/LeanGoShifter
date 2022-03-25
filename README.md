@@ -41,7 +41,7 @@ Loci are calculated as the furthest SNPs at each locus extended by twice the med
 ### Usage
 
 ```
-usage: goshifter.py [-h] snp_map annotation permute out_dir prefix
+usage: lean_go_shifter.py [-h] snp_map annotation permute out_dir prefix
 
 A lean reimplementation of GoShifter
 
