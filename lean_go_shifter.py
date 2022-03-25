@@ -37,7 +37,9 @@ DISCRETION ONLY.
 
 
 import argparse
+import functools
 import math
+import multiprocessing
 import os
 import sys
 
@@ -60,6 +62,7 @@ def parse_arguments():
     parser.add_argument('permute', help='Number of permutations for the null distribution.')
     parser.add_argument('out_dir', help='Output directory.')
     parser.add_argument('prefix', help='Prefix for output files.')
+    parser.add_argument('--threads', help='The number of threads to use.', default='1')
 
     args = parser.parse_args()
 
@@ -79,6 +82,16 @@ def parse_arguments():
     
     if args.permute <= 0:
         print('Permutations must be greater than 0', file=sys.stderr)
+        exit(2)
+
+    try:
+        args.threads = int(args.threads)
+    except ValueError:
+        print(f'{args.threads} is not an integer', file=sys.stderr)
+        exit(2)
+
+    if args.threads <= 0:
+        print('Threads must be greater than 0', file=sys.stderr)
         exit(2)
 
     return args
@@ -182,7 +195,7 @@ def snps_overlap_with_annotations(snp_map, annotations):
     return False
 
 
-def permute_locus(locus, snp_map, annotations, iters):
+def permute_locus(locus_index, loci, snp_map, annotations, iters):
 
     '''
     Calculates the observed overlap with annotations and then performs permutations to
@@ -195,15 +208,24 @@ def permute_locus(locus, snp_map, annotations, iters):
     :return: A tuple containing the observed overlap and the null distribution.
     '''
 
-    if len(annotations) == 0:
+    locus = loci.iloc[locus_index, :]
+
+    # Identify SNPs and annotations at the locus
+    snps_at_locus = snp_map.copy().loc[locus.Locus == snp_map['Locus'], :]
+    snps_at_locus.reset_index(drop=True, inplace=True)
+
+    annotations_at_locus = annotations.copy().loc[(locus.Chr == annotations['Chr']) & (locus.Start <= annotations['End']) & (annotations['Start'] <= locus.End), :]
+    annotations_at_locus.reset_index(drop=True, inplace=True)
+
+    if len(annotations_at_locus) == 0:
         return 0, np.zeros((iters,))
 
     # Restrict annotations that are outside the locus bounds to strictly within the locus region
-    annotations['Start'] = annotations['Start'].apply(lambda x: np.max((locus.Start, x)))
-    annotations['End'] = annotations['End'].apply(lambda x: np.min((locus.End, x)))
+    annotations_at_locus['Start'] = annotations_at_locus['Start'].apply(lambda x: np.max((locus.Start, x)))
+    annotations_at_locus['End'] = annotations_at_locus['End'].apply(lambda x: np.min((locus.End, x)))
 
     # Determine the observed overlap at the locus
-    observed = int(snps_overlap_with_annotations(snp_map, annotations))
+    observed = int(snps_overlap_with_annotations(snps_at_locus, annotations_at_locus))
 
     # Build null distribution
     locus_width = locus.End - locus.Start + 1
@@ -215,7 +237,7 @@ def permute_locus(locus, snp_map, annotations, iters):
         shift = np.random.randint(0, locus_width)
 
         # Add shift value to all genomic coordinates of the annotation
-        annotations_iter = annotations.copy()
+        annotations_iter = annotations_at_locus.copy()
         annotations_iter[['Start', 'End']] = annotations_iter[['Start', 'End']].add(shift)
 
         # Identify any annotations that overflow (go past the boundary of the locus)
@@ -234,7 +256,7 @@ def permute_locus(locus, snp_map, annotations, iters):
         annotations_iter.sort_values(['Chr', 'Start', 'End'], ignore_index=True, inplace=True)
 
         # Store iteration result
-        iter_result = int(snps_overlap_with_annotations(snp_map, annotations_iter))
+        iter_result = int(snps_overlap_with_annotations(snps_at_locus, annotations_iter))
         iterations.append(iter_result)
 
     return observed, np.array(iterations)
@@ -254,24 +276,15 @@ def main():
     loci = infer_loci(snp_map, annotations)
 
     # Process each locus
-    observed_dist = np.zeros((len(loci),))
-    null_dist = np.zeros((args.permute, len(loci)))
+    with multiprocessing.Pool(args.threads) as pool:
 
-    for locus_index, locus in loci.iterrows():
-
-        # Identify SNPs and annotations at the locus
-        snps_at_locus = snp_map.copy().loc[locus.Locus == snp_map['Locus'], :]
-        snps_at_locus.reset_index(drop=True, inplace=True)
-
-        annotations_at_locus = annotations.copy().loc[(locus.Chr == annotations['Chr']) & (locus.Start <= annotations['End']) & (annotations['Start'] <= locus.End), :]
-        annotations_at_locus.reset_index(drop=True, inplace=True)
-        
-        # Perform permutations
-        observed, iterations = permute_locus(locus, snps_at_locus, annotations_at_locus, args.permute)
-
-        # Update observed and null distributions
-        observed_dist[locus_index] = observed
-        null_dist[:, locus_index] = iterations
+        result = pool.map(
+            functools.partial(permute_locus, loci=loci, snp_map=snp_map, annotations=annotations, iters=args.permute), 
+            range(len(loci))
+        )
+    
+    observed_dist = np.array([x[0] for x in result])
+    null_dist = np.stack([x[1] for x in result], axis=1)
     
     # Calculate statistics over count distribution
     count_observed = observed_dist.sum()

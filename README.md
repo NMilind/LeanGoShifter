@@ -15,9 +15,11 @@ I have reimplemented the tool in Python 3 with a reduced feature set:
 Lean GoShifter is written for **Python 3.8**. It uses the following base modules:
 
 1. `argparse`
-2. `math`
-3. `os`
-4. `sys`
+2. `functools`
+3. `math`
+4. `multiprocessing`
+5. `os`
+6. `sys`
 
 In addition, Lean GoShifter requires the following modules:
 
@@ -41,19 +43,20 @@ Loci are calculated as the furthest SNPs at each locus extended by twice the med
 ### Usage
 
 ```
-usage: lean_go_shifter.py [-h] snp_map annotation permute out_dir prefix
+usage: lean_go_shifter.py [-h] [--threads THREADS] snp_map annotation permute out_dir prefix
 
 A lean reimplementation of GoShifter
 
 positional arguments:
-  snp_map     A table of SNPs for each individual signal.
-  annotation  File with genomic regions representing annotations.
-  permute     Number of permutations for the null distribution.
-  out_dir     Output directory.
-  prefix      Prefix for output files.
+  snp_map            A table of SNPs for each individual signal.
+  annotation         File with genomic regions representing annotations.
+  permute            Number of permutations for the null distribution.
+  out_dir            Output directory.
+  prefix             Prefix for output files.
 
 optional arguments:
-  -h, --help  show this help message and exit
+  -h, --help         show this help message and exit
+  --threads THREADS  The number of threads to use.
 ```
 
 ### Inputs
