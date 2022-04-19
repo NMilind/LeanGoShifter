@@ -143,8 +143,8 @@ def infer_loci(snp_map, annotations):
     loci = snp_map.groupby('Locus').agg({
         'Chr': 'first',
         'Position': [
-            lambda x: x.min() - 2 * median_annotation_width,
-            lambda x: x.max() + 2 * median_annotation_width
+            lambda x: x.min() - median_annotation_width,
+            lambda x: x.max() + median_annotation_width
         ]
     })
     loci.columns = loci.columns.droplevel(0)
@@ -291,7 +291,7 @@ def main():
 
     count_null_dist = null_dist.sum(axis=1)
 
-    p_value = (count_null_dist >= count_observed).sum() / args.permute
+    p_value = ((count_null_dist >= count_observed).sum() + 1) / (args.permute + 1)
 
     with open(os.path.join(args.out_dir, f'{args.prefix}_p_value.tsv'), 'w') as f_out:
         f_out.write(f'pvalue\t{p_value}')
